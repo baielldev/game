@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Найди пару</title>
+    <style>
+      :root {
+        --bg: #1a1033;
+        --card: #6c5ce7;
+        --accent: #ffd166;
+        --ok: #38f9a8;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        user-select: none;
+      }
+      body {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 16px;
+        background: radial-gradient(circle at 30% 20%, #3a1c71, var(--bg));
+        color: #fff;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      h1 {
+        color: var(--accent);
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        text-shadow: 0 0 20px rgba(255, 209, 102, 0.5);
+      }
+      .stats {
+        display: flex;
+        gap: 24px;
+        font-size: 18px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .stats b {
+        color: var(--accent);
+      }
+      .levels {
+        display: flex;
+        gap: 8px;
+      }
+      .levels button,
+      .restart {
+        padding: 8px 18px;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--accent);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .levels button.active,
+      .restart:hover {
+        background: var(--accent);
+        color: #1a1033;
+      }
+      .board {
+        display: grid;
+        gap: 10px;
+        width: min(92vw, 460px);
+      }
+      .card {
+        aspect-ratio: 1;
+        perspective: 600px;
+        cursor: pointer;
+      }
+      .inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        transition: transform 0.45s;
+      }
+      .card.open .inner,
+      .card.done .inner {
+        transform: rotateY(180deg);
+      }
+      .face {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        backface-visibility: hidden;
+        font-size: clamp(26px, 8vw, 44px);
+      }
+      .front {
+        background: linear-gradient(135deg, #8e7cff, var(--card));
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        font-size: 24px;
+      }
+      .back {
+        background: #fff;
+        transform: rotateY(180deg);
+      }
+      .card.done .back {
+        background: #d4fff0;
+        box-shadow: 0 0 18px var(--ok);
+      }
+      .win {
+        position: fixed;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: rgba(26, 16, 51, 0.9);
+        text-align: center;
+      }
+      .win.show {
+        display: flex;
+      }
+      .win h2 {
+        font-size: 40px;
+        color: var(--accent);
+      }
+      .win button {
+        padding: 12px 30px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--accent);
+        font-weight: 700;
+        font-size: 16px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Найди пару</h1>
+    <div class="levels" id="levels">
+      <button data-n="12">Лёгкий</button>
+      <button data-n="16" class="active">Средний</button>
+      <button data-n="20">Сложный</button>
+    </div>
+    <div class="stats">
+      Ходы: <b id="moves">0</b> Время: <b id="time">0</b> с Рекорд:
+      <b id="best">–</b>
+    </div>
+    <div class="board" id="board"></div>
+    <button class="restart" id="restart">Заново</button>
+    <div class="win" id="win">
+      <h2>🎉 Победа!</h2>
+      <p id="result"></p>
+      <button id="again">Играть ещё</button>
+    </div>
+
+    <script>
+      const EMOJI = [
+        "🍓",
+        "🍕",
+        "🚀",
+        "🎸",
+        "🐱",
+        "🌈",
+        "🎮",
+        "🦄",
+        "🍩",
+        "⚽",
+        "🌸",
+        "🔥",
+        "🐼",
+        "🎧",
+        "🍉",
+      ];
+      const $ = (id) => document.getElementById(id);
+      let total = 16,
+        first = null,
+        lock = false,
+        moves = 0,
+        matched = 0,
+        seconds = 0,
+        timer = null;
+
+      const bestKey = () => "memoryBest" + total;
+      const getBest = () => {
+        try {
+          return localStorage.getItem(bestKey());
+        } catch (e) {
+          return null;
+        }
+      };
+
+      function shuffle(a) {
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      function newGame() {
+        clearInterval(timer);
+        timer = null;
+        first = null;
+        lock = false;
+        moves = 0;
+        matched = 0;
+        seconds = 0;
+        $("moves").textContent = 0;
+        $("time").textContent = 0;
+        $("best").textContent = getBest() || "–";
+        $("win").classList.remove("show");
+        const cols = total === 12 ? 4 : total === 16 ? 4 : 5;
+        $("board").style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        const set = shuffle([...EMOJI]).slice(0, total / 2);
+        const deck = shuffle([...set, ...set]);
+        $("board").innerHTML = deck
+          .map(
+            (e) =>
+              `<div class="card" data-e="${e}"><div class="inner"><div class="face front">❓</div><div class="face back">${e}</div></div></div>`,
+          )
+          .join("");
+      }
+
+      $("board").addEventListener("click", (e) => {
+        const card = e.target.closest(".card");
+        if (
+          !card ||
+          lock ||
+          card.classList.contains("open") ||
+          card.classList.contains("done")
+        )
+          return;
+        if (!timer)
+          timer = setInterval(() => ($("time").textContent = ++seconds), 1000);
+        card.classList.add("open");
+        if (!first) {
+          first = card;
+          return;
+        }
+        moves++;
+        $("moves").textContent = moves;
+        if (first.dataset.e === card.dataset.e) {
+          first.classList.replace("open", "done");
+          card.classList.replace("open", "done");
+          first = null;
+          matched += 2;
+          if (matched === total) finish();
+        } else {
+          lock = true;
+          const a = first;
+          first = null;
+          setTimeout(() => {
+            a.classList.remove("open");
+            card.classList.remove("open");
+            lock = false;
+          }, 800);
+        }
+      });
+
+      function finish() {
+        clearInterval(timer);
+        const best = Number(getBest());
+        let note = "";
+        if (!best || moves < best) {
+          try {
+            localStorage.setItem(bestKey(), moves);
+          } catch (e) {}
+          note = " Новый рекорд! 🏆";
+        }
+        $("best").textContent = getBest() || moves;
+        $("result").textContent =
+          `Ходов: ${moves}, время: ${seconds} с.${note}`;
+        setTimeout(() => $("win").classList.add("show"), 600);
+      }
+
+      $("levels").addEventListener("click", (e) => {
+        if (!e.target.dataset.n) return;
+        total = Number(e.target.dataset.n);
+        document
+          .querySelectorAll("#levels button")
+          .forEach((b) => b.classList.toggle("active", b === e.target));
+        newGame();
+      });
+      $("restart").onclick = $("again").onclick = newGame;
+      newGame();
+    </script>
+  </body>
+</html>
